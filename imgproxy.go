@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	_ "net/http/pprof"
 	"net/url"
 	"os"
 	"os/signal"
@@ -197,6 +199,18 @@ func initGracefulStop() context.Context {
 	return ctx
 }
 
+func healthHandler(response http.ResponseWriter, _ *http.Request) {
+	type HealthPayload struct {
+		Message string
+	}
+
+	response.Header().Set("Content-Type", "application/json")
+
+	message, _ := json.Marshal(HealthPayload{Message: "Healthy!"})
+
+	fmt.Fprint(response, string(message))
+}
+
 func main() {
 	// Start vips and disable caching, because I think we won't benefit much from it
 	// Details: https://github.com/DarthSim/imgproxy/blob/a344a47f0fa4b492e0a54db047a53991c05419ac/process.go#L52
@@ -211,6 +225,7 @@ func main() {
 	ctx := initGracefulStop()
 
 	http.Handle("/", http.TimeoutHandler(http.HandlerFunc(resizeHandler), UploadTimeout, "Upload timeout"))
+	http.Handle("/health", http.HandlerFunc(healthHandler))
 
 	srv := &http.Server{
 		Addr:         ":" + HTTPPort,
