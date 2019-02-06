@@ -56,7 +56,6 @@ RUN cd /root \
 		--without-matio \
 		--without-openslide \
 		--without-cfitsio \
-		--enable-debug=no \
 		--disable-static \
 		--enable-silent-rules \
 	&& make install-strip
