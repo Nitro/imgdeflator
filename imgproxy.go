@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -16,6 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws/awserr"
 	"github.com/aws/aws-sdk-go-v2/aws/external"
 	"github.com/aws/aws-sdk-go-v2/service/s3/s3manager"
+	"github.com/davidbyttow/govips/pkg/vips"
 	"github.com/hashicorp/golang-lru"
 	log "github.com/sirupsen/logrus"
 )
@@ -27,6 +30,8 @@ const (
 	RequestTimeout    = 11 * time.Second // Make sure this is a bit bigger than the UploadTimeout
 	UploaderCacheSize = 25
 	DefaultS3Region   = "eu-central-1"
+	MaxWidth          = 4096
+	MaxHeight         = 4096
 )
 
 var (
@@ -82,29 +87,54 @@ func parseS3URL(s3URL string) (*url.URL, error) {
 	return u, nil
 }
 
+func parseUintValue(value string, maxValue uint64) uint64 {
+	if value != "" {
+		parsedValue, err := strconv.ParseUint(value, 10, 32)
+		if err != nil || parsedValue > maxValue {
+			return 0
+		}
+
+		return parsedValue
+	}
+	return 0
+}
+
 func resizeHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		log.Warnf("Method %q not allowed", r.Method)
+		log.Debugf("Method %q not allowed", r.Method)
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
 
 	if r.ContentLength > MaxUploadSize {
-		log.Warnf("File too large (%d bytes)", r.ContentLength)
+		log.Debugf("File too large (%d bytes)", r.ContentLength)
 		http.Error(w, fmt.Sprintf("File too large (%d bytes)", r.ContentLength), http.StatusRequestEntityTooLarge)
+		return
+	}
+
+	query := r.URL.Query()
+	width := parseUintValue(query.Get("width"), MaxWidth)
+	height := parseUintValue(query.Get("height"), MaxHeight)
+	if width == 0 && height == 0 {
+		log.Debugf("Invalid width/height (%q/%q)", query.Get("width"), query.Get("height"))
+		http.Error(
+			w,
+			fmt.Sprintf("Invalid width/height (%q/%q)", query.Get("width"), query.Get("height")),
+			http.StatusBadRequest,
+		)
 		return
 	}
 
 	decodedPath, err := decodePath(r.URL.Path)
 	if err != nil {
-		log.Warnf("Failed to extract s3 URL from path %q: %s", r.URL.Path, err)
+		log.Debugf("Failed to extract s3 URL from path %q: %s", r.URL.Path, err)
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
 
 	s3URL, err := parseS3URL(decodedPath)
 	if err != nil {
-		log.Warnf("Failed to extract s3 bucket from URL %q: %s", decodedPath, err)
+		log.Debugf("Failed to extract s3 bucket from URL %q: %s", decodedPath, err)
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
@@ -119,10 +149,27 @@ func resizeHandler(w http.ResponseWriter, r *http.Request) {
 	// Set a hard limit for how much we can read from the body
 	r.Body = http.MaxBytesReader(w, r.Body, MaxUploadSize)
 
+	// Resize image
+	imageTransform := vips.NewTransform().Load(r.Body)
+
+	if width > 0 {
+		imageTransform.ResizeWidth(int(width))
+	}
+	if height > 0 {
+		imageTransform.ResizeHeight(int(height))
+	}
+
+	buf, _, err := imageTransform.Apply()
+	if err != nil {
+		log.Warnf("Failed to resize image for URL %q: %s", s3URL.String(), err)
+		http.Error(w, "Internal error", http.StatusServiceUnavailable)
+		return
+	}
+
 	_, err = uploader.UploadWithContext(
 		r.Context(),
 		&s3manager.UploadInput{
-			Body:        r.Body,
+			Body:        bytes.NewReader(buf),
 			Bucket:      aws.String(s3URL.Host),
 			ContentType: aws.String(r.Header.Get("Content-Type")),
 			Key:         aws.String(strings.TrimPrefix(s3URL.Path, "/")),
@@ -151,6 +198,16 @@ func initGracefulStop() context.Context {
 }
 
 func main() {
+	// Start vips and disable caching, because I think we won't benefit much from it
+	// Details: https://github.com/DarthSim/imgproxy/blob/a344a47f0fa4b492e0a54db047a53991c05419ac/process.go#L52
+	vips.Startup(&vips.Config{
+		// TODO: See if we want to enable file caching later
+		MaxCacheFiles: 1,
+		MaxCacheSize:  1,
+		MaxCacheMem:   1,
+	})
+	defer vips.Shutdown()
+
 	ctx := initGracefulStop()
 
 	http.Handle("/", http.TimeoutHandler(http.HandlerFunc(resizeHandler), UploadTimeout, "Upload timeout"))
