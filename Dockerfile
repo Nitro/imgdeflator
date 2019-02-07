@@ -60,16 +60,16 @@ RUN cd /root \
 		--enable-silent-rules \
 	&& make install-strip
 
-ADD . /root/imgproxy
+ADD . /root/imgdeflator
 
-# Build imgproxy
-RUN cd /root/imgproxy \
+# Build imgdeflator
+RUN cd /root/imgdeflator \
 	&& go build && echo $?
 
 # Copy compiled libs in /root/libs to easily add them in the final image
 RUN cd /root \
 	&& mkdir libs \
-	&& ldd /root/imgproxy/imgproxy | grep /usr/local/lib/ | awk '{print $3}' | xargs -I '{}' cp '{}' libs/
+	&& ldd /root/imgdeflator/imgdeflator | grep /usr/local/lib/ | awk '{print $3}' | xargs -I '{}' cp '{}' libs/
 
 
 ################
@@ -85,7 +85,7 @@ RUN apk --update add --no-cache \
 	ca-certificates fftw glib expat libjpeg-turbo libpng \
 	libwebp giflib librsvg libgsf libexif lcms2
 
-COPY --from=builder /root/imgproxy/imgproxy /imgproxy/imgproxy
+COPY --from=builder /root/imgdeflator/imgdeflator /imgdeflator/imgdeflator
 COPY --from=builder /root/libs/* /usr/local/lib/
 
 CMD ["/bin/s6-svscan", "/etc/services"]

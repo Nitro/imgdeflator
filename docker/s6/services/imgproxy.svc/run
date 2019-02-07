@@ -1,4 +1,4 @@
 #!/bin/sh
 
-echo "Launching imgproxy service..."
-/imgproxy/imgproxy
+echo "Launching imgdeflator service..."
+/imgdeflator/imgdeflator
