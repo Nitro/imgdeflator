@@ -211,6 +211,29 @@ func healthHandler(response http.ResponseWriter, _ *http.Request) {
 	fmt.Fprint(response, string(message))
 }
 
+// handleCORS is a wrapper which sets the appropriate CORS headers before invoking the
+// specified HandlerFunc
+func handleCORS(handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+
+		// For OPTIONS requests, we just forward the Access-Control-Request-Headers as
+		// Access-Control-Allow-Headers in the reply and return
+		if r.Method == http.MethodOptions {
+			if headers, ok := r.Header["Access-Control-Request-Headers"]; ok {
+				for _, header := range headers {
+					w.Header().Add("Access-Control-Allow-Headers", header)
+				}
+			}
+
+			return
+		}
+
+		handler(w, r)
+	}
+}
+
 func main() {
 	// Start vips and disable caching, because I think we won't benefit much from it
 	// Details: https://github.com/DarthSim/imgproxy/blob/a344a47f0fa4b492e0a54db047a53991c05419ac/process.go#L52
@@ -224,8 +247,8 @@ func main() {
 
 	ctx := initGracefulStop()
 
-	http.Handle("/", http.TimeoutHandler(http.HandlerFunc(resizeHandler), UploadTimeout, "Upload timeout"))
-	http.Handle("/health", http.HandlerFunc(healthHandler))
+	http.Handle("/", http.TimeoutHandler(handleCORS(resizeHandler), UploadTimeout, "Upload timeout"))
+	http.HandleFunc("/health", healthHandler)
 
 	srv := &http.Server{
 		Addr:         ":" + HTTPPort,
