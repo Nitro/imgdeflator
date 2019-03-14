@@ -22,18 +22,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/s3manager"
 	"github.com/davidbyttow/govips/pkg/vips"
 	"github.com/hashicorp/golang-lru"
+	"github.com/relistan/envconfig"
+	"github.com/relistan/rubberneck"
 	log "github.com/sirupsen/logrus"
 )
 
 const (
-	MaxUploadSize     = 5 * 1024 * 1024 //5MB
-	HTTPPort          = "8080"
-	UploadTimeout     = 10 * time.Second
-	RequestTimeout    = 11 * time.Second // Make sure this is a bit bigger than the UploadTimeout
 	UploaderCacheSize = 25
-	DefaultS3Region   = "eu-central-1"
-	MaxWidth          = 4096
-	MaxHeight         = 4096
 )
 
 var (
@@ -41,19 +36,45 @@ var (
 	uploaderCache, _ = lru.New(UploaderCacheSize)
 )
 
+type Config struct {
+	LoggingLevel    string        `envconfig:"LOGGING_LEVEL" default:"info"`
+	MaxUploadSize   int64         `envconfig:"MAX_UPLOAD_SIZE" default:"5242880"` //5MB
+	HTTPPort        string        `envconfig:"HTTP_PORT" default:"8080"`
+	UploadTimeout   time.Duration `envconfig:"UPLOAD_TIMEOUT" default:"10s"`
+	RequestTimeout  time.Duration `envconfig:"REQUEST_TIMEOUT" default:"11s"`
+	DefaultS3Region string        `envconfig:"DEFAULT_S3_REGION" default:"eu-central-1"`
+	MaxWidth        uint64        `envconfig:"MAX_WIDTH" default:"4096"`
+	MaxHeight       uint64        `envconfig:"MAX_HEIGHT" default:"4096"`
+}
+
+func configureLoggingLevel(config *Config) {
+	switch config.LoggingLevel {
+	case "debug":
+		log.SetLevel(log.DebugLevel)
+	case "info":
+		log.SetLevel(log.InfoLevel)
+	case "warn":
+		log.SetLevel(log.WarnLevel)
+	case "error":
+		log.SetLevel(log.ErrorLevel)
+	default:
+		log.SetLevel(log.InfoLevel)
+	}
+}
+
 // getS3Uploader looks up an S3 bucket in the uploaderCache and returns a configured
 // s3manager.Uploader for it or provisions a new one and returns that.
-func getS3Uploader(ctx context.Context, bucket string) (*s3manager.Uploader, error) {
+func getS3Uploader(ctx context.Context, bucket, defaultRegion string) (*s3manager.Uploader, error) {
 	if uploader, ok := uploaderCache.Get(bucket); ok {
 		return uploader.(*s3manager.Uploader), nil
 	}
 
-	cfg, err := external.LoadDefaultAWSConfig()
+	awsCfg, err := external.LoadDefaultAWSConfig()
 	if err != nil {
 		return nil, fmt.Errorf("could not load the default AWS config: %s", err)
 	}
 
-	region, err := s3manager.GetBucketRegion(ctx, cfg, bucket, DefaultS3Region)
+	region, err := s3manager.GetBucketRegion(ctx, awsCfg, bucket, defaultRegion)
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok && aerr.Code() == "NotFound" {
 			return nil, fmt.Errorf("region for bucket %q not found", bucket)
@@ -62,8 +83,8 @@ func getS3Uploader(ctx context.Context, bucket string) (*s3manager.Uploader, err
 	}
 	log.Debugf("Bucket %q is in region: %s", bucket, region)
 
-	cfg.Region = region
-	uploader := s3manager.NewUploader(cfg)
+	awsCfg.Region = region
+	uploader := s3manager.NewUploader(awsCfg)
 
 	// Don't overwrite a cached entry that got written by another goroutine in the mean time
 	_, _ = uploaderCache.ContainsOrAdd(bucket, uploader)
@@ -101,22 +122,26 @@ func parseUintValue(value string, maxValue uint64) uint64 {
 	return 0
 }
 
-func resizeHandler(w http.ResponseWriter, r *http.Request) {
+type Resizer struct {
+	config *Config
+}
+
+func (resizer *Resizer) Handler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		log.Debugf("Method %q not allowed", r.Method)
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
 
-	if r.ContentLength > MaxUploadSize {
+	if r.ContentLength > resizer.config.MaxUploadSize {
 		log.Debugf("File too large (%d bytes)", r.ContentLength)
 		http.Error(w, fmt.Sprintf("File too large (%d bytes)", r.ContentLength), http.StatusRequestEntityTooLarge)
 		return
 	}
 
 	query := r.URL.Query()
-	width := parseUintValue(query.Get("width"), MaxWidth)
-	height := parseUintValue(query.Get("height"), MaxHeight)
+	width := parseUintValue(query.Get("width"), resizer.config.MaxWidth)
+	height := parseUintValue(query.Get("height"), resizer.config.MaxHeight)
 	if width == 0 && height == 0 {
 		log.Debugf("Invalid width/height (%q/%q)", query.Get("width"), query.Get("height"))
 		http.Error(
@@ -141,7 +166,7 @@ func resizeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	uploader, err := getS3Uploader(r.Context(), s3URL.Host)
+	uploader, err := getS3Uploader(r.Context(), s3URL.Host, resizer.config.DefaultS3Region)
 	if err != nil {
 		log.Warnf("Failed to get uploader for bucket %q: %s", s3URL.Host, err)
 		http.Error(w, "Bad request", http.StatusBadRequest)
@@ -149,7 +174,7 @@ func resizeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set a hard limit for how much we can read from the body
-	r.Body = http.MaxBytesReader(w, r.Body, MaxUploadSize)
+	r.Body = http.MaxBytesReader(w, r.Body, resizer.config.MaxUploadSize)
 
 	// Resize image
 	imageTransform := vips.NewTransform().Load(r.Body)
@@ -211,9 +236,9 @@ func healthHandler(response http.ResponseWriter, _ *http.Request) {
 	fmt.Fprint(response, string(message))
 }
 
-// handleCORS is a wrapper which sets the appropriate CORS headers before invoking the
-// specified HandlerFunc
-func handleCORS(handler http.HandlerFunc) http.HandlerFunc {
+// corsHandler sets the appropriate CORS headers in a closure
+// which wraps the specified handler
+func corsHandler(handler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
@@ -235,6 +260,16 @@ func handleCORS(handler http.HandlerFunc) http.HandlerFunc {
 }
 
 func main() {
+	var config Config
+	err := envconfig.Process("imgdeflator", &config)
+	if err != nil {
+		log.Fatalf("Failed to parse the configuration parameters: %s", err)
+	}
+
+	configureLoggingLevel(&config)
+
+	rubberneck.Print(&config)
+
 	// Start vips and disable caching, because I think we won't benefit much from it
 	// Details: https://github.com/DarthSim/imgproxy/blob/a344a47f0fa4b492e0a54db047a53991c05419ac/process.go#L52
 	vips.Startup(&vips.Config{
@@ -245,15 +280,14 @@ func main() {
 	})
 	defer vips.Shutdown()
 
-	ctx := initGracefulStop()
-
-	http.Handle("/", http.TimeoutHandler(handleCORS(resizeHandler), UploadTimeout, "Upload timeout"))
+	resizer := Resizer{config: &config}
+	http.Handle("/", http.TimeoutHandler(corsHandler(resizer.Handler), config.UploadTimeout, "Upload timeout"))
 	http.HandleFunc("/health", healthHandler)
 
 	srv := &http.Server{
-		Addr:         ":" + HTTPPort,
-		ReadTimeout:  RequestTimeout,
-		WriteTimeout: RequestTimeout,
+		Addr:         ":" + config.HTTPPort,
+		ReadTimeout:  config.RequestTimeout,
+		WriteTimeout: config.RequestTimeout,
 	}
 	go func() {
 		err := srv.ListenAndServe()
@@ -262,13 +296,15 @@ func main() {
 		}
 	}()
 
+	ctx := initGracefulStop()
+
 	// Wait for shutdown signal
 	_ = <-ctx.Done()
 
 	// Shutdown server gracefully
-	ctx, done := context.WithTimeout(context.Background(), UploadTimeout)
+	ctx, done := context.WithTimeout(context.Background(), config.UploadTimeout)
 	defer done()
-	err := srv.Shutdown(ctx)
+	err = srv.Shutdown(ctx)
 	if err != nil {
 		log.Fatalf("HTTP server exited with error: %s", err)
 	}
