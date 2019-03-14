@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Nitro/urlsign"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/awserr"
 	"github.com/aws/aws-sdk-go-v2/aws/external"
@@ -37,14 +38,16 @@ var (
 )
 
 type Config struct {
-	LoggingLevel    string        `envconfig:"LOGGING_LEVEL" default:"info"`
-	MaxUploadSize   int64         `envconfig:"MAX_UPLOAD_SIZE" default:"5242880"` //5MB
-	HTTPPort        string        `envconfig:"HTTP_PORT" default:"8080"`
-	UploadTimeout   time.Duration `envconfig:"UPLOAD_TIMEOUT" default:"10s"`
-	RequestTimeout  time.Duration `envconfig:"REQUEST_TIMEOUT" default:"11s"`
-	DefaultS3Region string        `envconfig:"DEFAULT_S3_REGION" default:"eu-central-1"`
-	MaxWidth        uint64        `envconfig:"MAX_WIDTH" default:"4096"`
-	MaxHeight       uint64        `envconfig:"MAX_HEIGHT" default:"4096"`
+	LoggingLevel      string        `envconfig:"LOGGING_LEVEL" default:"info"`
+	MaxUploadSize     int64         `envconfig:"MAX_UPLOAD_SIZE" default:"5242880"` //5MB
+	HTTPPort          string        `envconfig:"HTTP_PORT" default:"8080"`
+	UploadTimeout     time.Duration `envconfig:"UPLOAD_TIMEOUT" default:"10s"`
+	RequestTimeout    time.Duration `envconfig:"REQUEST_TIMEOUT" default:"11s"`
+	DefaultS3Region   string        `envconfig:"DEFAULT_S3_REGION" default:"eu-central-1"`
+	MaxWidth          uint64        `envconfig:"MAX_WIDTH" default:"4096"`
+	MaxHeight         uint64        `envconfig:"MAX_HEIGHT" default:"4096"`
+	UrlSigningSecret  string        `envconfig:"URL_SIGNING_SECRET" default:"deadbeef"`
+	SigningBucketSize time.Duration `envconfig:"SIGNING_BUCKET_SIZE" default:"8h"`
 }
 
 func configureLoggingLevel(config *Config) {
@@ -122,8 +125,24 @@ func parseUintValue(value string, maxValue uint64) uint64 {
 	return 0
 }
 
+type Clock interface {
+	Now() time.Time
+}
+
+type utcClock struct {
+}
+
+func (c *utcClock) Now() time.Time {
+	return time.Now().UTC()
+}
+
 type Resizer struct {
 	config *Config
+	clock  Clock
+}
+
+func NewResizer(config *Config) *Resizer {
+	return &Resizer{config: config, clock: &utcClock{}}
 }
 
 func (resizer *Resizer) Handler(w http.ResponseWriter, r *http.Request) {
@@ -136,6 +155,18 @@ func (resizer *Resizer) Handler(w http.ResponseWriter, r *http.Request) {
 	if r.ContentLength > resizer.config.MaxUploadSize {
 		log.Debugf("File too large (%d bytes)", r.ContentLength)
 		http.Error(w, fmt.Sprintf("File too large (%d bytes)", r.ContentLength), http.StatusRequestEntityTooLarge)
+		return
+	}
+
+	if resizer.config.UrlSigningSecret != "" &&
+		!urlsign.IsValidSignature(
+			resizer.config.UrlSigningSecret,
+			resizer.config.SigningBucketSize,
+			resizer.clock.Now(),
+			r.URL.String(),
+		) {
+		log.Debugf("Invalid URL signature: %s", r.URL)
+		http.Error(w, "Invalid signature", http.StatusBadRequest)
 		return
 	}
 
@@ -270,6 +301,10 @@ func main() {
 
 	rubberneck.Print(&config)
 
+	if config.UrlSigningSecret == "" {
+		log.Warn("No URL signing secret was set. Running in insecure mode!")
+	}
+
 	// Start vips and disable caching, because I think we won't benefit much from it
 	// Details: https://github.com/DarthSim/imgproxy/blob/a344a47f0fa4b492e0a54db047a53991c05419ac/process.go#L52
 	vips.Startup(&vips.Config{
@@ -280,7 +315,7 @@ func main() {
 	})
 	defer vips.Shutdown()
 
-	resizer := Resizer{config: &config}
+	resizer := NewResizer(&config)
 	http.Handle("/", http.TimeoutHandler(corsHandler(resizer.Handler), config.UploadTimeout, "Upload timeout"))
 	http.HandleFunc("/health", healthHandler)
 
