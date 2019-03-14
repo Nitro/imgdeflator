@@ -146,6 +146,8 @@ func NewResizer(config *Config) *Resizer {
 }
 
 func (resizer *Resizer) Handler(w http.ResponseWriter, r *http.Request) {
+	log.Infof("Received resize request: %s", r.URL)
+
 	if r.Method != http.MethodPost {
 		log.Debugf("Method %q not allowed", r.Method)
 		http.Error(w, "Bad request", http.StatusBadRequest)
