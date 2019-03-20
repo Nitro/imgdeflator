@@ -210,7 +210,7 @@ func (resizer *Resizer) Handler(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, resizer.config.MaxUploadSize)
 
 	// Resize image
-	imageTransform := vips.NewTransform().Load(r.Body)
+	imageTransform := vips.NewTransform().Load(r.Body).ResizeStrategy(vips.ResizeStrategyCrop)
 
 	if width > 0 {
 		imageTransform.ResizeWidth(int(width))
