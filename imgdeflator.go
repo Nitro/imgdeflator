@@ -136,16 +136,52 @@ func (c *utcClock) Now() time.Time {
 	return time.Now().UTC()
 }
 
-type Resizer struct {
+type Deflator struct {
 	config *Config
+	server *http.Server
 	clock  Clock
 }
 
-func NewResizer(config *Config) *Resizer {
-	return &Resizer{config: config, clock: &utcClock{}}
+func NewDeflator(config *Config) *Deflator {
+	return &Deflator{
+		config: config,
+		server: &http.Server{
+			Addr:         ":" + config.HTTPPort,
+			ReadTimeout:  config.RequestTimeout,
+			WriteTimeout: config.RequestTimeout,
+		},
+		clock: &utcClock{},
+	}
 }
 
-func (resizer *Resizer) Handler(w http.ResponseWriter, r *http.Request) {
+func (d *Deflator) InitVips() {
+	// Start vips and disable caching, because I think we won't benefit much from it
+	// Details: https://github.com/DarthSim/imgproxy/blob/a344a47f0fa4b492e0a54db047a53991c05419ac/process.go#L52
+	vips.Startup(&vips.Config{
+		// TODO: See if we want to enable file caching later
+		MaxCacheFiles: 1,
+		MaxCacheSize:  1,
+		MaxCacheMem:   1,
+	})
+}
+
+func (d *Deflator) Shutdown(ctx context.Context) error {
+	err := d.server.Shutdown(ctx)
+
+	// Shutdown Vips after the HTTP server is stopped
+	vips.Shutdown()
+
+	return err
+}
+
+func (d *Deflator) ListenAndServe() {
+	err := d.server.ListenAndServe()
+	if err != http.ErrServerClosed {
+		log.Errorf("http.ListenAndServe error: %s", err)
+	}
+}
+
+func (d *Deflator) Handler(w http.ResponseWriter, r *http.Request) {
 	log.Infof("Received resize request: %s", r.URL)
 
 	if r.Method != http.MethodPost {
@@ -154,17 +190,17 @@ func (resizer *Resizer) Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if r.ContentLength > resizer.config.MaxUploadSize {
+	if r.ContentLength > d.config.MaxUploadSize {
 		log.Debugf("File too large (%d bytes)", r.ContentLength)
 		http.Error(w, fmt.Sprintf("File too large (%d bytes)", r.ContentLength), http.StatusRequestEntityTooLarge)
 		return
 	}
 
-	if resizer.config.UrlSigningSecret != "" &&
+	if d.config.UrlSigningSecret != "" &&
 		!urlsign.IsValidSignature(
-			resizer.config.UrlSigningSecret,
-			resizer.config.SigningBucketSize,
-			resizer.clock.Now(),
+			d.config.UrlSigningSecret,
+			d.config.SigningBucketSize,
+			d.clock.Now(),
 			r.URL.String(),
 		) {
 		log.Debugf("Invalid URL signature: %s", r.URL)
@@ -173,8 +209,8 @@ func (resizer *Resizer) Handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := r.URL.Query()
-	width := parseUintValue(query.Get("width"), resizer.config.MaxWidth)
-	height := parseUintValue(query.Get("height"), resizer.config.MaxHeight)
+	width := parseUintValue(query.Get("width"), d.config.MaxWidth)
+	height := parseUintValue(query.Get("height"), d.config.MaxHeight)
 	if width == 0 && height == 0 {
 		log.Debugf("Invalid width/height (%q/%q)", query.Get("width"), query.Get("height"))
 		http.Error(
@@ -199,7 +235,7 @@ func (resizer *Resizer) Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	uploader, err := getS3Uploader(r.Context(), s3URL.Host, resizer.config.DefaultS3Region)
+	uploader, err := getS3Uploader(r.Context(), s3URL.Host, d.config.DefaultS3Region)
 	if err != nil {
 		log.Warnf("Failed to get uploader for bucket %q: %s", s3URL.Host, err)
 		http.Error(w, "Bad request", http.StatusBadRequest)
@@ -207,9 +243,12 @@ func (resizer *Resizer) Handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set a hard limit for how much we can read from the body
-	r.Body = http.MaxBytesReader(w, r.Body, resizer.config.MaxUploadSize)
+	r.Body = http.MaxBytesReader(w, r.Body, d.config.MaxUploadSize)
 
 	// Resize image
+	// Note: vips.ResizeStrategyCrop is needed to produce the exact desired dimensions.
+	// It might be useful to have an option to disable this in certain situations
+	// for performance considerations.
 	imageTransform := vips.NewTransform().Load(r.Body).ResizeStrategy(vips.ResizeStrategyCrop)
 
 	if width > 0 {
@@ -307,41 +346,25 @@ func main() {
 		log.Warn("No URL signing secret was set. Running in insecure mode!")
 	}
 
-	// Start vips and disable caching, because I think we won't benefit much from it
-	// Details: https://github.com/DarthSim/imgproxy/blob/a344a47f0fa4b492e0a54db047a53991c05419ac/process.go#L52
-	vips.Startup(&vips.Config{
-		// TODO: See if we want to enable file caching later
-		MaxCacheFiles: 1,
-		MaxCacheSize:  1,
-		MaxCacheMem:   1,
-	})
-	defer vips.Shutdown()
+	deflator := NewDeflator(&config)
+	deflator.InitVips()
 
-	resizer := NewResizer(&config)
-	http.Handle("/", http.TimeoutHandler(corsHandler(resizer.Handler), config.UploadTimeout, "Upload timeout"))
+	// Setup HTTP handlers
+	http.Handle("/", http.TimeoutHandler(corsHandler(deflator.Handler), config.UploadTimeout, "Upload timeout"))
 	http.HandleFunc("/health", healthHandler)
 
-	srv := &http.Server{
-		Addr:         ":" + config.HTTPPort,
-		ReadTimeout:  config.RequestTimeout,
-		WriteTimeout: config.RequestTimeout,
-	}
-	go func() {
-		err := srv.ListenAndServe()
-		if err != http.ErrServerClosed {
-			log.Errorf("http.ListenAndServe error: %s")
-		}
-	}()
+	// Start the HTTP server in the background
+	go deflator.ListenAndServe()
 
 	ctx := initGracefulStop()
 
 	// Wait for shutdown signal
-	_ = <-ctx.Done()
+	<-ctx.Done()
 
 	// Shutdown server gracefully
 	ctx, done := context.WithTimeout(context.Background(), config.UploadTimeout)
 	defer done()
-	err = srv.Shutdown(ctx)
+	err = deflator.Shutdown(ctx)
 	if err != nil {
 		log.Fatalf("HTTP server exited with error: %s", err)
 	}

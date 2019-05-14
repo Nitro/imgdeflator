@@ -1,8 +1,12 @@
+github.com/Nitro/urlsign v0.0.0-20181015102600-5c9420004fa4 h1:PzkFPpKVlnBHKKOrB4hIz/imgFE48mYoQR6t16UVZ78=
+github.com/Nitro/urlsign v0.0.0-20181015102600-5c9420004fa4/go.mod h1:YYI6psmVqfFYrABuvsEk9dXmhd4Sfea17A8I31ipqTM=
 github.com/aws/aws-sdk-go-v2 v0.7.0 h1:a5xRI/tBmUFKuAA0SOyEY2P1YhQb+jVOEI9P/7KfrP0=
 github.com/aws/aws-sdk-go-v2 v0.7.0/go.mod h1:17MaCZ9g0q5BIMxwzRQeiv8M3c8+W7iuBnlWAEprcxE=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davidbyttow/govips v0.0.0-20190113153649-df58c4deb750 h1:zhfK6OHe0Xq7jEXWiDBZi/oyes3DVERNEpj0cOWyAWA=
 github.com/davidbyttow/govips v0.0.0-20190113153649-df58c4deb750/go.mod h1:a3qO525EPfJNYa0NXBcNtXzJvyQsJAxphEDa7OOHPBk=
+github.com/davidbyttow/govips v0.0.0-20190304175058-d272f04c0fea h1:ZtETbJTO1R3qVLdVbpjrDhD5fR8bYVhhq2RMi7rOlH4=
+github.com/davidbyttow/govips v0.0.0-20190304175058-d272f04c0fea/go.mod h1:a3qO525EPfJNYa0NXBcNtXzJvyQsJAxphEDa7OOHPBk=
 github.com/go-sql-driver/mysql v1.4.0/go.mod h1:zAC/RDZ24gD3HViQzih4MyKcchzm+sOG5ZlKdlhCg5w=
 github.com/golang/protobuf v1.2.0/go.mod h1:6lQm79b+lXiMfvg/cZm0SGofjICqVBUtrP5yJMmIC1U=
 github.com/gucumber/gucumber v0.0.0-20180127021336-7d5c79e832a2/go.mod h1:YbdHRK9ViqwGMS0rtRY+1I6faHvVyyurKPIPwifihxI=
@@ -13,6 +17,10 @@ github.com/jmespath/go-jmespath v0.0.0-20180206201540-c2b33e8439af/go.mod h1:Nht
 github.com/konsorten/go-windows-terminal-sequences v1.0.1/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
 github.com/pkg/errors v0.8.0/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
+github.com/relistan/envconfig v1.2.0 h1:vV63eEDEqRFCdPjU3ZlK3XyMoMujTwP+jPucKI29XRg=
+github.com/relistan/envconfig v1.2.0/go.mod h1:PcZKEZZglAn2b0bEQub14LFFvkL1FFuHPhjnxG5Wx+k=
+github.com/relistan/rubberneck v1.1.0 h1:19k9vDyR/VoaKxDW4jimhvQrzRPZgWUv2zkC9laDhOc=
+github.com/relistan/rubberneck v1.1.0/go.mod h1:BMAhXJjKOLS+Wa8oKLdlUpLwoFiXdngrESflrb+qqME=
 github.com/shiena/ansicolor v0.0.0-20151119151921-a422bbe96644/go.mod h1:nkxAfR/5quYxwPZhyDxgasBMnRtBZd0FCEpawpjMUFg=
 github.com/sirupsen/logrus v1.3.0 h1:hI/7Q+DtNZ2kINb6qt/lS+IyXnHQe9e90POfeewL/ME=
 github.com/sirupsen/logrus v1.3.0/go.mod h1:LxeOpSwHxABJmUn/MG1IvRgCAasNZTLOkJPxbbu5VWo=
