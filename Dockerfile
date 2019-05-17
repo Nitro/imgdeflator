@@ -3,7 +3,7 @@ FROM golang:1.11-alpine3.9 as builder
 # Inspired from https://github.com/DarthSim/imgproxy/blob/a344a47f0fa4b492e0a54db047a53991c05419ac/Dockerfile
 # Note: All the dependencies have been adjusted one way or the other
 
-ENV IMAGEMAGICK_VERSION "7.0.8-26"
+ENV IMAGEMAGICK_VERSION "7.0.8-45"
 ENV VIPS_VERSION "8.7.4"
 
 # Install dependencies
