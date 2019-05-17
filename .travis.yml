@@ -1,0 +1,56 @@
+language: go
+
+go:
+  - 1.12.x
+
+sudo: required
+
+services:
+  - docker
+
+env:
+  - GO111MODULE=on
+
+before_install:
+  - curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | sh -s -- -b $(go env GOPATH)/bin v1.16.0
+
+# Prevent Travis from running the `travis_install_go_dependencies`
+# script, so we use only the dependencies from the `vendor` folder.
+install: true
+
+script:
+  # TODO: Install the right version of libvips under Travis first
+  # - go test -v --timeout 30s ./... && (CGO_ENABLED=0 GOOS=linux go build -ldflags '-d')
+  # - golangci-lint run
+  - if [[ "$TRAVIS_BRANCH" == "master" ]] && [[ "${TRAVIS_GO_VERSION}" == "${PRODUCTION_GO_VERSION}"* ]]; then
+      echo "Building container gonitro/imgdeflator:${TRAVIS_COMMIT::7}" &&
+      docker build -t imgdeflator .  &&
+      docker tag imgdeflator gonitro/imgdeflator:${TRAVIS_COMMIT::7} &&
+      docker tag imgdeflator gonitro/imgdeflator:latest;
+    fi
+
+after_success:
+  - docker login -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD"
+  - echo "Building on Go version ${TRAVIS_GO_VERSION} for branch ${TRAVIS_BRANCH}"
+  - if [[ "$TRAVIS_BRANCH" == "master" ]] && [[ "${TRAVIS_GO_VERSION}" == "${PRODUCTION_GO_VERSION}"* ]]; then
+      echo "Pushing container gonitro/imgdeflator:${TRAVIS_COMMIT::7}" &&
+      docker push gonitro/imgdeflator:${TRAVIS_COMMIT::7};
+    fi
+  - if [[ "$TRAVIS_BRANCH" == "master" ]] && [[ "${TRAVIS_GO_VERSION}" == "${PRODUCTION_GO_VERSION}"* ]] && [ -z "${NO_PUSH_LATEST}" ]; then
+      docker push gonitro/imgdeflator:latest;
+    fi
+
+deploy:
+  provider: releases
+
+  api_key:
+    secure: "dcReAtCgkojvD4G0dxDrpf1MNTCthX1x4rv6WJDK7xJAOTErepWAm7psP8vEoLnyoZtBNC7S0ywRBmTYZOLiVd4Nx2TqgLteUiBUSiIc3j7H9dP5uY0a4gpng2UfvHoUJMdQBRYNWOb9l9/a1G2dsRz38X3JPBiXBIPMY+Mqi1K/cwp3UPwzPVDcrv2r2dkSa5pUrD5aTOaDZMW2rXzoSTeDHgwb1JAZUocTH+o8SKlXxBDtITwPlla1fHdrRVoS57L3ATBYl7aOGx+fgsUphkYmI9Fe6J0a/FleOKrqHpJTdYicYq6N06lOIf61hmHC4YRZxQxMl16liQgg1WdZ7YD1WUDGxA6cwusLxtPtw8X1GEr/o98PsjzhTZtSl1JsnKM2pnOOlng5BzTjVj5YMaAqTEf7vQG/NwSl8s6zu5V1dDRmWnUHrxmHQA25NGC+CiRa82EmfQ9OIbZw9qRrtDGo91NqPDlRtNLmUOrr3A3zLk60yJ8Nc73aZ9BQxpJnqePVBlaKG2XOwinFQSRMm6KEHFbR8ZonnXkJydWANh7ZLty5qp4w7GKkD74K2/BfnYIxgQuf7vVe9BQrA+eYAlHDzyd+dNwzhojDuSVCaZ62351NbSnfjkyVYifVJjOWAiFbOgRUwzJFNvHtCvVRBvkhCPudfxBz7QHkkFS3yJY="
+
+  file: imgdeflator
+
+  skip_cleanup: true
+
+  on:
+    repo: Nitro/imgdeflator
+    tags: true
+    condition: ${TRAVIS_GO_VERSION} == ${PRODUCTION_GO_VERSION}*

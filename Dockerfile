@@ -16,7 +16,7 @@ RUN cd /root \
 	&& mkdir ImageMagick \
 	&& wget -qO- "https://imagemagick.org/download/ImageMagick-${IMAGEMAGICK_VERSION}.tar.gz" | tar -xzf - -C ImageMagick --strip-components=1 \
 	&& cd ImageMagick \
-	&& ./configure \
+	&& MKDIR_P="/bin/mkdir -p" ./configure \
 		--enable-silent-rules \
 		--disable-static \
 		--disable-openmp \
@@ -38,6 +38,8 @@ RUN cd /root \
 		--without-wmf \
 		--without-xml \
 		--without-webp \
+		# See https://github.com/ImageMagick/ImageMagick/issues/1572
+		--disable-dependency-tracking \
 	&& make install-strip
 
 # Build vips
