@@ -2,7 +2,7 @@
 
 Imgdeflator is a small web server which handles `POST` requests with image attachments. It passes the received image through [`libvips`](https://jcupitt.github.io/libvips/) to resize it to the specified width/height and then it stores it on S3 at the specified path.
 
-It uses [ringman](https://github.com/Nitro/urlsign) to validate the signature `token` in the request URL.
+It uses [urlsign](https://github.com/Nitro/urlsign) to validate the signature `token` in the request URL.
 
 Kudos to [DarthSim](https://github.com/DarthSim) for writing [imgproxy](https://github.com/DarthSim/imgproxy), which served as inspiration for this library!
 
