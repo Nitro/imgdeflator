@@ -1,0 +1,102 @@
+# Default values for imgdeflator for development/stating environment
+
+# We start with 1 replica but the autoscaling section manages the real number
+# Please note that EKS and Autoscaling will manage availability for us
+# (right now we don't need antiaffinity or other configurations)
+
+# Custom attribute for our app versions
+appVersion: "82393d1"
+appName: "imgdeflator"
+environmentName: dev
+
+istio:
+  disabled: "false"
+
+replicaCount: 1
+
+name: imgdeflator
+kind: Deployment
+
+image:
+  repository: gonitro/imgdeflator
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: dockerhub
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name:
+
+podSecurityContext: {}
+
+securityContext: {}
+
+# All the ingress is managed from istio
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+  livenessProbePath: /health
+  readinessProbePath: /health
+
+# Always 2 replicas, maximum 3 replicas and scales up if
+# it hits 75% of CPU usage or 75% of memory usage
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 1
+  targetCPUUtilizationPercentage: 75
+  targetMemoryUtilizationPercentage: 75
+
+resources:
+  requests:
+    cpu: "50m"
+    memory: "60Mi"
+  # Limits are not recommended for multithread
+  # applications, see: https://learnk8s.io/production-best-practices/
+  limits:
+    cpu: "200m"
+    memory: "128Mi"
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity:
+  nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: node-category/cloud
+            operator: In
+            values:
+            - "true"
+
+secrets:
+  imgdeflator-aws-secret-access-id:
+    awsSecretName: secret/nitrocloud-dev/access
+    awsSecretKey: AWS_ACCESS_KEY_ID
+  imgdeflator-aws-secret-access-key:
+    awsSecretName: secret/nitrocloud-dev/secret
+    awsSecretKey: AWS_SECRET_ACCESS_KEY
+
+envFrom:
+  - secretRef:
+      name: imgdeflator-aws-secret-access-key
+  - secretRef:
+      name: imgdeflator-aws-secret-access-id
+
+env:
+  - name: IMGDEFLATOR_URL_SIGNING_SECRET
+    value: "6q5JkchCg0vpVvsSvqsTkjXlAHV3fgIqQLIW4E4fX04="
+# Must match ASRV_IMGDEFLATOR_BUCKETSIZE in account-service-server
+  - name: IMGDEFLATOR_SIGNING_BUCKET_SIZE
+    value: "8h"
+  - name: IMGDEFLATOR_LOGGING_LEVEL
+    value: "debug"
