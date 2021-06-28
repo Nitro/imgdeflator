@@ -12,17 +12,13 @@ environmentName: dev
 istio:
   disabled: "false"
 
-replicaCount: 1
-
 name: imgdeflator
 kind: Deployment
 
 image:
-  repository: gonitro/imgdeflator
+  repository: 574097476646.dkr.ecr.eu-central-1.amazonaws.com/nitro/dev/imgdeflator
   pullPolicy: IfNotPresent
 
-imagePullSecrets:
-  - name: dockerhub
 nameOverride: ""
 fullnameOverride: ""
 
