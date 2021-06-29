@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "imgdeflator.fullname" . }}
+  labels:
+{{ include "imgdeflator.labels" . | indent 4 }}
+spec:
+  {{- if .Values.replicaCount }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "imgdeflator.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      annotations:
+        reload-on-secret-change/auto: "true"
+      labels:
+        app: {{ include "imgdeflator.appName" . }}
+        version: {{ .Values.appVersion | quote }}
+        app.kubernetes.io/name: {{ include "imgdeflator.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/version: {{ .Values.appVersion | quote }}
+    spec:
+    {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+      serviceAccountName: {{ template "imgdeflator.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          {{ if .Values.image.tag }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          {{ else }}
+          image: "{{ .Values.image.repository }}:{{ .Values.appVersion }}"
+          {{ end }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.service.livenessProbePath }}
+              port: {{ .Values.service.targetPort }}
+            initialDelaySeconds: {{ .Values.service.waitSecondsProbe }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.service.readinessProbePath }}
+              port: {{ .Values.service.targetPort }}
+            initialDelaySeconds: {{ .Values.service.waitSecondsProbe }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          env:
+            - name: SERVICE_VERSION
+              value: {{ .Values.appVersion | quote }}
+            - name: SERVICE_NAME
+              value:  {{ include "imgdeflator.name" . | quote }}
+            - name: ENVIRONMENT_NAME
+              value: {{ .Values.environmentName | quote }}
+            {{- if .Values.env }}
+              {{- toYaml .Values.env | nindent 12 }}
+            {{- end }}
+          {{- if .Values.envFrom }}
+          envFrom:
+            {{- toYaml .Values.envFrom | nindent 12 }}
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+    {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}

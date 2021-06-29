@@ -1,0 +1,23 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  name: {{ include "imgdeflator.name" . }}
+  namespace: istio-system
+spec:
+  selector:
+    istio: ingressgateway # use istio default ingress gateway
+  servers:
+  - port:
+      number: 443
+      name: https
+      protocol: HTTPS
+    tls:
+      mode: SIMPLE
+      privateKey: /etc/istio/ingressgateway-certs/tls.key        # This keys are the default for all the services *.gonitro.com
+      serverCertificate: /etc/istio/ingressgateway-certs/tls.crt
+    hosts:
+    {{- if (eq .Values.environmentName "prod") }}
+    -  {{ include "imgdeflator.name" . }}.gonitro.com
+    {{ else }}
+    -  {{ include "imgdeflator.name" . }}.gonitrodev.com
+    {{ end }}
