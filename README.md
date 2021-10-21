@@ -1,6 +1,6 @@
 # imgdeflator
 
-Imgdeflator is a small web server which handles `POST` requests with image attachments. It passes the received image through [`libvips`](https://jcupitt.github.io/libvips/) to resize it to the specified width/height and then it stores it on S3 at the specified path.
+Imgdeflator is a small web server which handles `POST` requests with image attachments. It passes the received image through [`libvips`](https://libvips.org/) to resize it to the specified width/height and then it stores it on S3 at the specified path.
 
 It uses [urlsign](https://github.com/Nitro/urlsign) to validate the signature `token` in the request URL.
 
