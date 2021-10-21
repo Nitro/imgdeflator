@@ -28,13 +28,6 @@ go-build-dev:
   RUN  PKG_CONFIG_PATH=/root/vips go build -ldflags="-s -w" -o imgdeflator imgdeflator.go
   SAVE ARTIFACT imgdeflator
 
-go-build-prod:
-  FROM +go-build-dev
-  RUN apk --update add --no-cache upx \
-    && rm -rf /var/lib/apt/lists/*
-  RUN upx --ultra-brute imgdeflator
-  SAVE ARTIFACT imgdeflator
-
 go-base:
   FROM $BASE_IMAGE
   RUN apk --update add --no-cache \
@@ -60,9 +53,8 @@ go-base:
     && make install-strip
   WORKDIR $WORKDIR
   COPY . .
-  RUN --ssh go mod download
+  RUN go mod download
 
 go-test:
   FROM +go-base
-  RUN go test -v --timeout 30s ./... 
-
+  RUN go test -v --timeout 30s ./...
