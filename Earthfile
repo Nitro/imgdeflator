@@ -1,6 +1,5 @@
 ARG BASE_IMAGE=golang:1.12.14-alpine
 ARG WORKDIR=/opt/nitro/imgdeflator
-ARG IMAGEMAGICK_VERSION="7.0.8-46"
 ARG VIPS_VERSION="8.7.4"
 
 
