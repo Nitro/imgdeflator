@@ -3,7 +3,7 @@ FROM golang:1.11-alpine3.9 as builder
 # Inspired from https://github.com/DarthSim/imgproxy/blob/a344a47f0fa4b492e0a54db047a53991c05419ac/Dockerfile
 # Note: All the dependencies have been adjusted one way or the other
 
-ENV IMAGEMAGICK_VERSION "7.1.0-43"
+ENV IMAGEMAGICK_VERSION "7.1.0-52"
 ENV VIPS_VERSION "8.7.4"
 
 # Install dependencies
@@ -12,9 +12,10 @@ RUN apk --update add --no-cache \
 	libjpeg-turbo-dev libpng-dev libwebp-dev giflib-dev librsvg-dev libexif-dev lcms2-dev
 
 # Build ImageMagick
+COPY resources/ImageMagick-${IMAGEMAGICK_VERSION}.tar.xz /root
+
 RUN cd /root \
 	&& mkdir ImageMagick \
-	&& wget https://imagemagick.org/archive/ImageMagick-${IMAGEMAGICK_VERSION}.tar.xz \
     && tar -xf  ImageMagick-${IMAGEMAGICK_VERSION}.tar.xz \
 	&& cd ImageMagick-${IMAGEMAGICK_VERSION} \
 	&& MKDIR_P="/bin/mkdir -p" ./configure \
