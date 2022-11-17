@@ -1,4 +1,4 @@
-FROM golang:1.15-alpine3.9 as builder
+FROM golang:1.15-alpine3.14 as builder
 
 # Inspired from https://github.com/DarthSim/imgproxy/blob/a344a47f0fa4b492e0a54db047a53991c05419ac/Dockerfile
 # Note: All the dependencies have been adjusted one way or the other
@@ -79,7 +79,7 @@ RUN cd /root \
 ################
 # Actual image #
 ################
-FROM alpine:3.9
+FROM alpine:3.14
 
 # Set up s6
 RUN wget -qO- https://github.com/just-containers/skaware/releases/download/v1.21.7/s6-2.7.2.0-linux-amd64-bin.tar.gz | tar -xvzf -
