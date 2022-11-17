@@ -1,6 +1,6 @@
-ARG BASE_IMAGE=golang:1.12.14-alpine
+ARG BASE_IMAGE=golang:1.15-alpine
 ARG WORKDIR=/opt/nitro/imgdeflator
-ARG VIPS_VERSION="8.7.4"
+ARG VIPS_VERSION="8.13.3"
 
 
 configure:
