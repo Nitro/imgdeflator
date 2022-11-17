@@ -1,10 +1,10 @@
-FROM golang:1.11-alpine3.9 as builder
+FROM golang:1.15-alpine3.9 as builder
 
 # Inspired from https://github.com/DarthSim/imgproxy/blob/a344a47f0fa4b492e0a54db047a53991c05419ac/Dockerfile
 # Note: All the dependencies have been adjusted one way or the other
 
 ENV IMAGEMAGICK_VERSION "7.1.0-52"
-ENV VIPS_VERSION "8.7.4"
+ENV VIPS_VERSION "8.13.3"
 
 # Install dependencies
 RUN apk --update add --no-cache \

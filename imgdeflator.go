@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	_ "net/http/pprof"
@@ -18,11 +19,11 @@ import (
 
 	"github.com/Nitro/urlsign"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/aws/awserr"
-	"github.com/aws/aws-sdk-go-v2/aws/external"
-	"github.com/aws/aws-sdk-go-v2/service/s3/s3manager"
+	"github.com/aws/aws-sdk-go-v2/config"
+	s3manager "github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/davidbyttow/govips/pkg/vips"
-	"github.com/hashicorp/golang-lru"
+	lru "github.com/hashicorp/golang-lru"
 	"github.com/relistan/envconfig"
 	"github.com/relistan/rubberneck"
 	log "github.com/sirupsen/logrus"
@@ -72,14 +73,15 @@ func getS3Uploader(ctx context.Context, bucket, defaultRegion string) (*s3manage
 		return uploader.(*s3manager.Uploader), nil
 	}
 
-	awsCfg, err := external.LoadDefaultAWSConfig()
+	awsCfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
 		return nil, fmt.Errorf("could not load the default AWS config: %s", err)
 	}
 
-	region, err := s3manager.GetBucketRegion(ctx, awsCfg, bucket, defaultRegion)
+	region, err := s3manager.GetBucketRegion(ctx, s3.NewFromConfig(awsCfg), bucket)
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok && aerr.Code() == "NotFound" {
+		var bnf s3manager.BucketNotFound
+		if errors.As(err, &bnf) {
 			return nil, fmt.Errorf("region for bucket %q not found", bucket)
 		}
 		return nil, fmt.Errorf("failed to determine region for bucket %q: %s", bucket, err)
@@ -87,7 +89,7 @@ func getS3Uploader(ctx context.Context, bucket, defaultRegion string) (*s3manage
 	log.Debugf("Bucket %q is in region: %s", bucket, region)
 
 	awsCfg.Region = region
-	uploader := s3manager.NewUploader(awsCfg)
+	uploader := s3manager.NewUploader(s3.NewFromConfig(awsCfg))
 
 	// Don't overwrite a cached entry that got written by another goroutine in the mean time
 	_, _ = uploaderCache.ContainsOrAdd(bucket, uploader)
@@ -265,9 +267,9 @@ func (d *Deflator) Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = uploader.UploadWithContext(
+	_, err = uploader.Upload(
 		r.Context(),
-		&s3manager.UploadInput{
+		&s3.PutObjectInput{
 			Body:        bytes.NewReader(buf),
 			Bucket:      aws.String(s3URL.Host),
 			ContentType: aws.String(r.Header.Get("Content-Type")),
