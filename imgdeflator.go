@@ -73,7 +73,7 @@ func getS3Uploader(ctx context.Context, bucket, defaultRegion string) (*s3manage
 		return uploader.(*s3manager.Uploader), nil
 	}
 
-	awsCfg, err := config.LoadDefaultConfig(context.TODO())
+	awsCfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not load the default AWS config: %s", err)
 	}
